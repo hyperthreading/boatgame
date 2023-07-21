@@ -1,6 +1,7 @@
 import util from "util";
-import express from "express";
+import express, { Locals } from "express";
 import morgan from "morgan";
+import { DefaultDeserializer } from "v8";
 
 const app = express();
 
@@ -43,10 +44,28 @@ interface TickState {
 }
 
 interface WorldState {
+   id: string;
    tick: TickState;
    entities: Array<Boat>;
    playerOwnEntityRefList: Array<PlayerOwnedEntity>;
 }
+type SessionIdRequest = express.Request<{
+   sessionId: string;
+}>;
+type SessionBasedRequest = express.Request<
+   any,
+   any,
+   any,
+   any,
+   { world: WorldState }
+>;
+type PlayerRequest = express.Request<
+   any,
+   any,
+   any,
+   any,
+   { world: WorldState; boat: Boat }
+>;
 
 let idCounter = 0;
 function get_unique_id() {
@@ -78,20 +97,58 @@ function tickState_new(): TickState {
 }
 
 function worldState_new(): WorldState {
-   const boat = boat_new();
    return {
+      id: get_unique_id(),
       tick: tickState_new(),
-      entities: [boat],
-      playerOwnEntityRefList: [
-         {
-            ownedEntityId: boat.id,
-            playerId: "test_player",
-         },
-      ],
+      entities: [],
+      playerOwnEntityRefList: [],
    };
 }
 
-const testWorld = worldState_new();
+function worldState_checkPlayerExist(
+   worldState: WorldState,
+   playerId: PlayerId
+) {
+   return Boolean(
+      worldState.playerOwnEntityRefList.find((ref) => ref.playerId === playerId)
+   );
+}
+
+function worldState_addPlayer(worldState: WorldState, playerId: PlayerId) {
+   const boat = boat_new();
+   worldState.entities.push(boat);
+   worldState.playerOwnEntityRefList.push({
+      ownedEntityId: boat.id,
+      playerId,
+   });
+}
+
+const sessions: Array<WorldState> = [];
+
+function findSession(sessionId: string): WorldState | undefined {
+   return sessions.find((session) => session.id === sessionId);
+}
+
+function findPlayerBoat(
+   world: WorldState,
+   playerId: PlayerId
+): Boat | undefined {
+   const entityRef = world.playerOwnEntityRefList.find(
+      (entityRef) => entityRef.playerId === playerId
+   );
+   if (!entityRef) {
+      return;
+   }
+
+   const boat = world.entities.find(
+      (entity) => entity.id === entityRef.ownedEntityId
+   );
+   if (!boat) {
+      return;
+   }
+
+   return boat;
+}
 
 function engine_tick_continue(worldState: WorldState, tickAmount: number) {
    for (let tick = 0; tick < tickAmount; tick++) {
@@ -170,14 +227,17 @@ tickRouter.post("/stop", (req, res) => {
       data: "ok",
    });
 });
-tickRouter.post("/set", (req, res) => {
-   testWorld.tick.tickrate = req.body.data.tickrate;
+tickRouter.post("/set", (req: SessionBasedRequest, res) => {
+   const world = res.locals.world;
+   world.tick.tickrate = req.body.data.tickrate;
    res.json({
       data: "ok",
    });
 });
-tickRouter.post("/proceed", (req, res) => {
-   engine_tick_continue(testWorld, req.body.data.amount);
+tickRouter.post("/proceed", (req: SessionBasedRequest, res) => {
+   const world = res.locals.world;
+
+   engine_tick_continue(world, req.body.data.amount);
    res.json({
       data: "ok",
    });
@@ -190,53 +250,19 @@ tickRouter.post("/add-breakpoint", (req, res) => {
 
 const playerRouter = express.Router();
 
-function findMyBoat(world: WorldState, playerId: PlayerId): Boat | undefined {
-   const entityRef = world.playerOwnEntityRefList.find(
-      (entityRef) => entityRef.playerId === playerId
-   );
-   if (!entityRef) {
-      return;
-   }
-
-   const boat = world.entities.find(
-      (entity) => entity.id === entityRef.ownedEntityId
-   );
-   if (!boat) {
-      return;
-   }
-
-   return boat;
-}
-
-playerRouter.get("/boat", (req, res) => {
-   const playerId = req.headers.authorization?.split(" ")[1];
-   const boat = findMyBoat(testWorld, playerId || "");
-   if (!boat) {
-      res.status(422).json({
-         message: "Player not found",
-      });
-
-      return;
-   }
+playerRouter.get("/boat", (req: PlayerRequest, res) => {
+   const boat = res.locals.boat;
 
    res.json({
       data: boat,
    });
 });
 
-playerRouter.post("/boat/set", (req, res) => {
-   const playerId = req.headers.authorization?.split(" ")[1];
-   const boat = findMyBoat(testWorld, playerId || "");
-   if (!boat) {
-      res.status(422).json({
-         message: "Player not found",
-      });
-      return;
-   }
+playerRouter.post("/boat/set", (req: PlayerRequest, res) => {
+   const boat = res.locals.boat;
 
-   // const boat = testWorld.entities[0];
-   boat.velocity.length = req.body.data.velocity.length;
-   boat.velocity.angular = req.body.data.velocity.angular;
+   const { length, angular } = req.body.data.velocity;
+   boat.velocity = { ...boat.velocity, length, angular };
 
    res.json({
       data: boat,
@@ -245,14 +271,75 @@ playerRouter.post("/boat/set", (req, res) => {
 
 const sessionRouter = express.Router();
 sessionRouter.use("/engine/tick", tickRouter);
-sessionRouter.use("/player", playerRouter);
+sessionRouter.use(
+   "/player",
+   (req, res, next) => {
+      const boat = findPlayerBoat(
+         res.locals.world as WorldState,
+         res.locals.playerId
+      );
+      if (!boat) {
+         res.status(422).json({
+            message: "Player not found",
+         });
+         return;
+      }
+      res.locals.boat = boat;
+
+      next();
+   },
+   playerRouter
+);
+sessionRouter.post("/join", (req, res) => {
+   const world = res.locals.world;
+   const playerId = res.locals.playerId;
+   if (worldState_checkPlayerExist(world, playerId)) {
+      worldState_addPlayer(world, playerId);
+      res.json({ message: "ok" });
+   } else {
+      res.status(422).json({ message: "player already has joined." });
+   }
+});
 
 const sessionManagerRouter = express.Router();
-sessionManagerRouter.post("/create", (req, res) =>
-   res.json({ data: { sessionId: "test" } })
+sessionManagerRouter.post("/create", (req, res) => {
+   const world = worldState_new();
+   worldState_addPlayer(world, res.locals.playerId);
+   sessions.push(world);
+   return res.json({ data: { sessionId: world.id } });
+});
+
+sessionManagerRouter.use(
+   "/:sessionId",
+   (req: SessionIdRequest, res, next) => {
+      const world = findSession(req.params.sessionId);
+
+      if (!world) {
+         res.status(422).json({
+            message: "World not found",
+         });
+
+         return;
+      }
+
+      res.locals.world = world;
+      next();
+   },
+   sessionRouter
 );
-sessionManagerRouter.use("/:sessionId", sessionRouter);
-app.use("/api/sessions", sessionManagerRouter);
+app.use(
+   "/api/sessions",
+   (req, res, next) => {
+      try {
+         res.locals.playerId = req.headers.authorization?.split(" ")[1] || "";
+      } catch (e) {
+         res.status(401).json({ message: "invalid token" });
+         return;
+      }
+      next();
+   },
+   sessionManagerRouter
+);
 
 app.listen(8080, () => {
    console.log("Server is listening on 8080");
