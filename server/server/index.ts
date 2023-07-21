@@ -21,11 +21,20 @@ interface Vector2D {
    y: number;
 }
 
+type EntityId = string;
+type PlayerId = string;
+
 interface Boat {
    type: string;
+   id: EntityId;
    velocity: Velocity;
    position: Vector2D;
    degree: number;
+}
+
+interface PlayerOwnedEntity {
+   ownedEntityId: EntityId;
+   playerId: PlayerId;
 }
 
 interface TickState {
@@ -36,11 +45,19 @@ interface TickState {
 interface WorldState {
    tick: TickState;
    entities: Array<Boat>;
+   playerOwnEntityRefList: Array<PlayerOwnedEntity>;
+}
+
+let idCounter = 0;
+function get_unique_id() {
+   // 내맴 ㅋㅋ
+   return String(idCounter++);
 }
 
 function boat_new(): Boat {
    return {
       type: "player_boat",
+      id: get_unique_id(),
       velocity: {
          length: 0,
          angular: 0,
@@ -61,9 +78,16 @@ function tickState_new(): TickState {
 }
 
 function worldState_new(): WorldState {
+   const boat = boat_new();
    return {
       tick: tickState_new(),
-      entities: [boat_new()],
+      entities: [boat],
+      playerOwnEntityRefList: [
+         {
+            ownedEntityId: boat.id,
+            playerId: "test_player",
+         },
+      ],
    };
 }
 
@@ -165,8 +189,35 @@ tickRouter.post("/add-breakpoint", (req, res) => {
 });
 
 const playerRouter = express.Router();
+
+function findMyBoat(world: WorldState, playerId: PlayerId): Boat | undefined {
+   const entityRef = world.playerOwnEntityRefList.find(
+      (entityRef) => entityRef.playerId === playerId
+   );
+   if (!entityRef) {
+      return;
+   }
+
+   const boat = world.entities.find(
+      (entity) => entity.id === entityRef.ownedEntityId
+   );
+   if (!boat) {
+      return;
+   }
+
+   return boat;
+}
+
 playerRouter.get("/boat", (req, res) => {
-   const boat = testWorld.entities[0];
+   const playerId = req.headers.authorization?.split(" ")[1];
+   const boat = findMyBoat(testWorld, playerId || "");
+   if (!boat) {
+      res.status(422).json({
+         message: "Player not found",
+      });
+
+      return;
+   }
 
    res.json({
       data: boat,
@@ -174,7 +225,16 @@ playerRouter.get("/boat", (req, res) => {
 });
 
 playerRouter.post("/boat/set", (req, res) => {
-   const boat = testWorld.entities[0];
+   const playerId = req.headers.authorization?.split(" ")[1];
+   const boat = findMyBoat(testWorld, playerId || "");
+   if (!boat) {
+      res.status(422).json({
+         message: "Player not found",
+      });
+      return;
+   }
+
+   // const boat = testWorld.entities[0];
    boat.velocity.length = req.body.data.velocity.length;
    boat.velocity.angular = req.body.data.velocity.angular;
 
