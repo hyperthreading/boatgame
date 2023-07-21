@@ -37,34 +37,51 @@ const client = axios.create({
     timeout: 5000,
 });
 
+const createSession = async () => {
+    return (await client.post("/sessions/create")).data.data
+        .sessionId;
+}
+
+const setupEngineForTesting = async (sessionId) => {
+    await client.post(`/sessions/${sessionId}/engine/tick/stop`);
+    await client.post(`/sessions/${sessionId}/engine/tick/set`, {
+        data: {
+            tickrate: 10,
+        },
+    });
+}
+
+const controlBoat = async (sessionId, data) => client.post(`/sessions/${sessionId}/player/boat/set`, {
+    data,
+});
+
+const getBoat = async (sessionId) => client.get(
+    `/sessions/${sessionId}/player/boat`
+);
+
+const proceedTick = async (sessionId, tickAmount) => client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
+    data: {
+        amount: tickAmount,
+    },
+});
+
 (async () => {
     await test("배가 앞으로 움직인다.", async () => {
-        const sessionId = (await client.post("/sessions/create")).data.data
-            .sessionId;
-        await client.post(`/sessions/${sessionId}/engine/tick/stop`);
-        await client.post(`/sessions/${sessionId}/engine/tick/set`, {
-            data: {
-                tickrate: 10,
-            },
-        });
-        await client.post(`/sessions/${sessionId}/player/boat/set`, {
-            data: {
+        const sessionId = await createSession();
+        await setupEngineForTesting(sessionId);
+        await controlBoat(
+            sessionId,
+            {
                 velocity: {
                     length: 1,
                     angular: 0,
                 },
-            },
-        });
-        const oldResponse = await client.get(
-            `/sessions/${sessionId}/player/boat`
+            }
         );
+        const oldResponse = await getBoat(sessionId);
         const oldPosition = oldResponse.data.data.position;
-        await client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
-            data: {
-                amount: 100,
-            },
-        });
-        const response = await client.get(`/sessions/${sessionId}/player/boat`);
+        await proceedTick(sessionId, 100);
+        const response = await getBoat(sessionId);
         const newPosition = response.data.data.position;
         assert(
             getDistance(oldPosition, newPosition) === 10,
@@ -73,32 +90,23 @@ const client = axios.create({
     });
 
     await test("배가 회전한다.", async () => {
-        const sessionId = (await client.post("/sessions/create")).data.data
-            .sessionId;
-        await client.post(`/sessions/${sessionId}/engine/tick/stop`);
-        await client.post(`/sessions/${sessionId}/engine/tick/set`, {
-            data: {
-                tickrate: 10,
-            },
-        });
-        await client.post(`/sessions/${sessionId}/player/boat/set`, {
-            data: {
+        const sessionId = await createSession();
+        await setupEngineForTesting(sessionId);
+        await controlBoat(
+            sessionId,
+            {
                 velocity: {
                     length: 0,
                     angular: 1,
                 },
-            },
-        });
+            }
+        );
         const oldResponse = await client.get(
             `/sessions/${sessionId}/player/boat`
         );
         const oldDegree = oldResponse.data.data;
-        await client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
-            data: {
-                amount: 100,
-            },
-        });
-        const response = await client.get(`/sessions/${sessionId}/player/boat`);
+        await proceedTick(sessionId, 100);
+        const response = await getBoat(sessionId);
         const newDegree = response.data.data;
         assert(
             Math.abs(oldDegree.degree - newDegree.degree) === 10,
