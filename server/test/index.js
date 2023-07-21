@@ -1,4 +1,5 @@
 const axios = require("axios");
+const util = require("util");
 
 async function test(name, fn) {
     console.log("Running", name);
@@ -20,6 +21,12 @@ async function sleep(ms) {
         setTimeout(resolve, ms);
     });
 }
+
+const inspect = (obj) => util.inspect(obj, {
+    showHidden: false,
+    depth: null,
+    colors: true,
+});
 
 function getDistance(pos1, pos2) {
     return ((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2) ** 0.5;
@@ -44,7 +51,7 @@ const client = axios.create({
             data: {
                 velocity: {
                     length: 1,
-                    degree: 0,
+                    angular: 0,
                 },
             },
         });
@@ -59,10 +66,47 @@ const client = axios.create({
         });
         const response = await client.get(`/sessions/${sessionId}/player/boat`);
         const newPosition = response.data.data.position;
-        console.log(oldPosition, newPosition);
         assert(
             getDistance(oldPosition, newPosition) === 10,
-            "10만큼 이동해야 함"
+            `10만큼 이동해야 함 ${inspect(oldPosition)} -> ${inspect(newPosition)}`
         );
+    });
+
+    await test("배가 회전한다.", async () => {
+        const sessionId = (await client.post("/sessions/create")).data.data
+            .sessionId;
+        await client.post(`/sessions/${sessionId}/engine/tick/stop`);
+        await client.post(`/sessions/${sessionId}/engine/tick/set`, {
+            data: {
+                tickrate: 10,
+            },
+        });
+        await client.post(`/sessions/${sessionId}/player/boat/set`, {
+            data: {
+                velocity: {
+                    length: 0,
+                    angular: 1,
+                },
+            },
+        });
+        const oldResponse = await client.get(
+            `/sessions/${sessionId}/player/boat`
+        );
+        const oldDegree = oldResponse.data.data;
+        await client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
+            data: {
+                amount: 100,
+            },
+        });
+        const response = await client.get(`/sessions/${sessionId}/player/boat`);
+        const newDegree = response.data.data;
+        assert(
+            Math.abs(oldDegree.degree - newDegree.degree) === 10,
+            `10만큼 회전해야 함 ${inspect(oldDegree)} -> ${inspect(newDegree)}`
+        );
+    });
+
+    await test("세션마다 다른 상태를 갖는다.", async () => {
+
     });
 })();

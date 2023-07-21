@@ -15,12 +15,13 @@ function boat_new() {
         type: "player_boat",
         velocity: {
             length: 0,
-            degree: 0,
+            angular: 0,
         },
         position: {
             x: 0,
             y: 0,
         },
+        degree: 0,
     };
 }
 
@@ -41,54 +42,58 @@ function worldState_new() {
 const testWorld = worldState_new();
 
 function engine_tick_continue(worldState, tickAmount) {
-    worldState.entities.forEach((entity) => {
-        if (entity.type === "player_boat") {
-            function mulVector(v, l) {
-                return {
-                    x: v.x * l,
-                    y: v.y * l,
+    for (let tick = 0; tick < tickAmount; tick++) {
+        worldState.entities.forEach((entity) => {
+            if (entity.type === "player_boat") {
+                function mulVector(v, l) {
+                    return {
+                        x: v.x * l,
+                        y: v.y * l,
+                    };
+                }
+
+                function addVector(v0, v1) {
+                    return {
+                        x: v0.x + v1.x,
+                        y: v0.y + v1.y,
+                    };
+                }
+
+                function applyVector(v, fn) {
+                    return {
+                        x: fn(v.x),
+                        y: fn(v.y),
+                    };
+                }
+                const degreeFromXAxis = 90 - entity.degree;
+                const radian = (degreeFromXAxis * Math.PI) / 180;
+
+                const roundTo = (n, digit) => {
+                    const mult = 1 / digit;
+                    return Math.round(n * mult) / mult;
                 };
-            }
 
-            function addVector(v0, v1) {
-                return {
-                    x: v0.x + v1.x,
-                    y: v0.y + v1.y,
+                const normalizedVector = {
+                    x: Math.sin(radian),
+                    y: Math.cos(radian),
                 };
+
+                const displacement =
+                    mulVector(
+                        normalizedVector,
+                        entity.velocity.length / worldState.tick.tickrate
+                    );
+
+                // floating point가 근삿값인 관계로 10진수로 반올림 해줘야 함.
+                entity.position = applyVector(
+                    addVector(entity.position, displacement),
+                    (n) => roundTo(n, 0.001)
+                );
+
+                entity.degree = roundTo(entity.degree + entity.velocity.angular / worldState.tick.tickrate, 0.001);
             }
-
-            function applyVector(v, fn) {
-                return {
-                    x: fn(v.x),
-                    y: fn(v.y),
-                };
-            }
-            const degreeFromXAxis = 90 - entity.velocity.degree;
-            const radian = (degreeFromXAxis * Math.PI) / 180;
-
-            const roundTo = (n, digit) => {
-                const mult = 1 / digit;
-                return Math.round(n * mult) / mult;
-            };
-
-            const vec = {
-                x: Math.sin(radian),
-                y: Math.cos(radian),
-            };
-
-            // radian이 근삿값이라서 0.001에서 절사를 해줘야 90도 같은거 테스트할때 편함.
-            const displacement = applyVector(
-                mulVector(
-                    vec,
-                    (entity.velocity.length * tickAmount) /
-                        worldState.tick.tickrate
-                ),
-                (n) => roundTo(n, 0.001)
-            );
-
-            entity.position = addVector(entity.position, displacement);
-        }
-    });
+        });
+    }
     worldState.tick.currentTick += tickAmount;
     console.log(
         util.inspect(worldState, {
@@ -140,7 +145,7 @@ playerRouter.get("/boat", (req, res) => {
 playerRouter.post("/boat/set", (req, res) => {
     const boat = testWorld.entities[0];
     boat.velocity.length = req.body.data.velocity.length;
-    boat.velocity.degree = req.body.data.velocity.degree;
+    boat.velocity.angular = req.body.data.velocity.angular;
 
     res.json({
         data: boat,
