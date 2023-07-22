@@ -1,4 +1,5 @@
 import axios from "axios";
+import { AxiosError } from "axios";
 import util from "util";
 // const axios = require("axios");
 // const util = require("util");
@@ -8,7 +9,13 @@ async function test(name: string, fn: () => Promise<any>) {
    try {
       await fn();
    } catch (e) {
-      console.error("Failed with", e);
+      if (e instanceof AxiosError) {
+         console.error("Failed on", e.response?.status, e.request?.path, e.config?.data);
+      } else if (e instanceof Error) {
+         console.error("Failed with", e);
+      } else {
+         console.error("Failed with some error", e);
+      }
    }
 }
 
@@ -172,24 +179,24 @@ async function upsertMultipleEntity(sessionId: string, data: any) {
       );
    });
 
-   // await test("주변 사물을 스캔할 수 있음", async () => {
-   //    const sessionId = await createSession();
-   //    await setupEngineForTesting(sessionId);
-   //    const boat = await getBoat(sessionId);
-   //    await controlBoat(sessionId, { scanRange: 1 });
-   //    const newEntity = {
-   //       type: "blob",
-   //       position: addVector(boat.position, { x: 0, y: 1 }),
-   //    };
-   //    const entityList = await upsertMultipleEntity(sessionId, [newEntity]);
-   //    const scannedEntityList = await scanFromBoat(sessionId);
-   //    assert(
-   //       Boolean(
-   //          scannedEntityList.find((entity) => entity.id === entityList[0].id)
-   //       ),
-   //       "추가한 엔티티를 스캔 범위에서 찾을 수 있음."
-   //    );
-   // });
+   await test("주변 사물을 스캔할 수 있음", async () => {
+      const sessionId = await createSession();
+      await setupEngineForTesting(sessionId);
+      const boat = await getBoat(sessionId);
+      await controlBoat(sessionId, { scanRange: 1 });
+      const newEntity = {
+         type: "blob",
+         position: addVector(boat.position, { x: 0, y: 1 }),
+      };
+      const entityList = await upsertMultipleEntity(sessionId, [newEntity]);
+      const scannedEntityList = await scanFromBoat(sessionId);
+      assert(
+         Boolean(
+            scannedEntityList.find((entity) => entity.id === entityList[0].id)
+         ),
+         `추가한 엔티티를 스캔 범위에서 찾을 수 있음.\nScanned: ${inspect(scannedEntityList)}`
+      );
+   });
 
    await test("같은 토큰을 써도 세션마다 다른 상태를 갖는다.", async () => {
       async function getBoatFromNewSession(velocity: Partial<BoatVelocity>) {

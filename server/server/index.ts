@@ -31,9 +31,31 @@ interface BoatProperty {
    scanRange: number;
 }
 
-interface Boat extends BoatProperty {
-   type: string;
+interface Boat extends Entity, BoatProperty {
+   type: "player_boat"
+}
+
+function isBoat(obj: Entity | Boat): obj is Boat {
+   return obj.type === "player_boat";
+}
+
+interface Entity {
    id: EntityId;
+   type: string;
+   position: Vector2D;
+}
+
+interface CreateEntityData {
+   type: string;
+   position: Vector2D;
+}
+
+function isExistingEntity(obj: Entity | CreateEntityData): obj is Entity {
+   return obj.hasOwnProperty("id");
+}
+
+function isNewEntity(obj: Entity | CreateEntityData): obj is CreateEntityData {
+   return obj.hasOwnProperty("id");
 }
 
 interface PlayerOwnedEntity {
@@ -51,7 +73,7 @@ interface WorldState {
    id: string;
    tick: TickState;
    length: number;
-   entities: Array<Boat>;
+   entities: Array<Entity>;
    playerOwnEntityRefList: Array<PlayerOwnedEntity>;
 }
 type SessionIdRequest = express.Request<{
@@ -142,6 +164,10 @@ function worldState_addPlayer(worldState: WorldState, playerId: PlayerId) {
    });
 }
 
+function worldState_findEntityById(worldState: WorldState, id: EntityId) {
+   return worldState.entities.find(ent => ent.id === id);
+}
+
 const sessions: Array<WorldState> = [];
 
 function findSession(sessionId: string): WorldState | undefined {
@@ -159,10 +185,8 @@ function findPlayerBoat(
       return;
    }
 
-   const boat = world.entities.find(
-      (entity) => entity.id === entityRef.ownedEntityId
-   );
-   if (!boat) {
+   const boat = worldState_findEntityById(world, entityRef.ownedEntityId);
+   if (!boat || !isBoat(boat)) {
       return;
    }
 
@@ -172,7 +196,7 @@ function findPlayerBoat(
 function engine_tick_continue(worldState: WorldState, tickAmount: number) {
    for (let tick = 0; tick < tickAmount; tick++) {
       worldState.entities.forEach((entity) => {
-         if (entity.type === "player_boat") {
+         if (isBoat(entity)) {
             function mulVector(v: Vector2D, l: number) {
                return {
                   x: v.x * l,
@@ -340,6 +364,40 @@ sessionRouter.post("/join", (req, res) => {
    } else {
       res.status(422).json({ message: "player already has joined." });
    }
+});
+
+type UpsertMultipleEntityRequest = express.Request<any, any, {
+   data: Array<Entity | CreateEntityData>
+}>
+
+sessionRouter.post("/upsert_multiple_entity", (req: UpsertMultipleEntityRequest, res) => {
+   const upsertList = req.body.data;
+   const updateList = upsertList.filter(isExistingEntity);
+   const insertList = upsertList.filter(isNewEntity);
+
+   const world = res.locals.world as WorldState;
+
+   const result: Entity[] = [];
+
+   insertList.forEach(data => {
+      const entity = {
+         ...data,
+         id: get_unique_id()
+      };
+      world.entities.push(entity)
+      result.push(entity);
+   });
+   updateList.forEach(data => {
+      const entity = worldState_findEntityById(world, data.id)
+      if (!entity) return;
+      Object.assign(entity, data);
+      result.push(entity)
+   });
+
+   res.json({
+      message: "ok",
+      data: result,
+   });
 });
 
 const sessionManagerRouter = express.Router();
