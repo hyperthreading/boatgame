@@ -67,8 +67,20 @@ const createSession = async () => {
    return (await client.post("/sessions/create")).data.data.sessionId;
 };
 
+const joinSession = async (sessionId: string) => {
+   return client.post(`/sessions/${sessionId}/join`);
+}
+
+const startTick = async (sessionId: string) => {
+   return await client.post(`/sessions/${sessionId}/engine/tick/start`);
+}
+
+const stopTick = async (sessionId: string) => {
+   return await client.post(`/sessions/${sessionId}/engine/tick/stop`);
+}
+
 const setupEngineForTesting = async (sessionId: string) => {
-   await client.post(`/sessions/${sessionId}/engine/tick/stop`);
+   await stopTick(sessionId);
    await client.post(`/sessions/${sessionId}/engine/tick/set`, {
       data: {
          tickrate: 10,
@@ -149,6 +161,39 @@ const proceedTick = async (sessionId: string, tickAmount: number) =>
       assert(
          boat1.velocity.length !== boat2.velocity.length,
          `Boat1 !== Boat2: ${inspect(boat1)} !== ${inspect(boat2)}`
+      );
+   });
+
+   await test("이미 존재하는 세션에 참여할 수 있음", async () => {
+      let error = null;
+      try {
+         await joinSession("nonexistent_session");
+      } catch (e) {
+         error = e;
+      }
+      assert(Boolean(error), `Error on nonexistent session ${inspect(error)}`);
+      const sessionId = await createSession();
+      await joinSession(sessionId);
+   });
+
+   await test("tick이 10% 오차 내로 진행됨", async () => {
+      const sessionId = await createSession();
+      await setupEngineForTesting(sessionId);
+      await controlBoat(sessionId, {
+         velocity: {
+            length: 1,
+            angular: 0,
+         },
+      });
+      const oldResponse = await getBoat(sessionId);
+      const oldPosition = oldResponse.data.data.position;
+      await startTick(sessionId);
+      await sleep(1100);
+      const response = await getBoat(sessionId);
+      const newPosition = response.data.data.position;
+      assert(
+         getDistance(oldPosition, newPosition) >= 1,
+         `1 이상 이동해야 함 ${inspect(oldPosition)} -> ${inspect(newPosition)}`
       );
    });
 })();

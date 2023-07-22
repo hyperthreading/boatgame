@@ -40,6 +40,7 @@ interface PlayerOwnedEntity {
 interface TickState {
    tickrate: number;
    currentTick: number;
+   tickLoopId: NodeJS.Timer | null;
 }
 
 interface WorldState {
@@ -93,6 +94,7 @@ function tickState_new(): TickState {
    return {
       tickrate: 10,
       currentTick: 0,
+      tickLoopId: null
    };
 }
 
@@ -203,7 +205,7 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
 
             entity.degree = roundTo(
                entity.degree +
-                  entity.velocity.angular / worldState.tick.tickrate,
+               entity.velocity.angular / worldState.tick.tickrate,
                0.001
             );
          }
@@ -219,13 +221,28 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
    );
 }
 
+function worldState_startTickLoop(world: WorldState) {
+   world.tick.tickLoopId = setInterval(
+      () => {
+         engine_tick_continue(world, 1);
+      }, 1000 / world.tick.tickrate
+   )
+}
+
+function worldState_stopTickLoop(world: WorldState) {
+   if (world.tick.tickLoopId === null) return;
+   clearInterval(world.tick.tickLoopId);
+}
+
 const tickRouter = express.Router();
 tickRouter.post("/start", (req, res) => {
+   worldState_startTickLoop(res.locals.world);
    res.json({
       data: "ok",
    });
 });
 tickRouter.post("/stop", (req, res) => {
+   worldState_stopTickLoop(res.locals.world);
    res.json({
       data: "ok",
    });
@@ -310,6 +327,7 @@ const sessionManagerRouter = express.Router();
 sessionManagerRouter.post("/create", (req, res) => {
    const world = worldState_new();
    worldState_addPlayer(world, res.locals.playerId);
+   worldState_startTickLoop(world);
    sessions.push(world);
    return res.json({ data: { sessionId: world.id } });
 });
