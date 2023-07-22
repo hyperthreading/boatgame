@@ -1,7 +1,6 @@
 import util from "util";
 import express, { Locals } from "express";
 import morgan from "morgan";
-import { DefaultDeserializer } from "v8";
 
 const app = express();
 
@@ -46,6 +45,7 @@ interface TickState {
 interface WorldState {
    id: string;
    tick: TickState;
+   length: number;
    entities: Array<Boat>;
    playerOwnEntityRefList: Array<PlayerOwnedEntity>;
 }
@@ -91,7 +91,7 @@ function boat_new(): Boat {
 
 function tickState_new(): TickState {
    return {
-      tickrate: 0,
+      tickrate: 10,
       currentTick: 0,
    };
 }
@@ -100,6 +100,7 @@ function worldState_new(): WorldState {
    return {
       id: get_unique_id(),
       tick: tickState_new(),
+      length: 10,
       entities: [],
       playerOwnEntityRefList: [],
    };
@@ -116,6 +117,8 @@ function worldState_checkPlayerExist(
 
 function worldState_addPlayer(worldState: WorldState, playerId: PlayerId) {
    const boat = boat_new();
+   boat.position.x = Math.round(Math.random() * worldState.length);
+   boat.position.y = Math.round(Math.random() * worldState.length);
    worldState.entities.push(boat);
    worldState.playerOwnEntityRefList.push({
       ownedEntityId: boat.id,
@@ -261,7 +264,9 @@ playerRouter.get("/boat", (req: PlayerRequest, res) => {
 playerRouter.post("/boat/set", (req: PlayerRequest, res) => {
    const boat = res.locals.boat;
 
-   const { length, angular } = req.body.data.velocity;
+   let { length, angular } = req.body.data.velocity as Partial<Velocity>;
+   length = length != undefined ? length : boat.velocity.length;
+   angular = angular != undefined ? angular : boat.velocity.angular;
    boat.velocity = { ...boat.velocity, length, angular };
 
    res.json({
