@@ -21,6 +21,37 @@ interface Vector2D {
    y: number;
 }
 
+const roundTo = (n: number, digit: number) => {
+   const mult = 1 / digit;
+   return Math.round(n * mult) / mult;
+};
+
+function getDistance(pos1: Vector2D, pos2: Vector2D): number {
+   return ((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2) ** 0.5;
+}
+
+function mulVector(v: Vector2D, l: number) {
+   return {
+      x: v.x * l,
+      y: v.y * l,
+   };
+}
+
+function addVector(v0: Vector2D, v1: Vector2D) {
+   return {
+      x: v0.x + v1.x,
+      y: v0.y + v1.y,
+   };
+}
+
+function applyVector(v: Vector2D, fn: (n: number) => number) {
+   return {
+      x: fn(v.x),
+      y: fn(v.y),
+   };
+}
+
+
 type EntityId = string;
 type PlayerId = string;
 
@@ -55,7 +86,7 @@ function isExistingEntity(obj: Entity | CreateEntityData): obj is Entity {
 }
 
 function isNewEntity(obj: Entity | CreateEntityData): obj is CreateEntityData {
-   return obj.hasOwnProperty("id");
+   return !obj.hasOwnProperty("id");
 }
 
 interface PlayerOwnedEntity {
@@ -164,8 +195,17 @@ function worldState_addPlayer(worldState: WorldState, playerId: PlayerId) {
    });
 }
 
+
+// TODO: index plz
 function worldState_findEntityById(worldState: WorldState, id: EntityId) {
    return worldState.entities.find(ent => ent.id === id);
+}
+
+// TODO: it might be possible to index the search
+function worldState_findEntityWithinRange(worldState: WorldState, position: Vector2D, range: number) {
+   return worldState.entities.filter(entity =>
+      getDistance(position, entity.position) <= range
+   );
 }
 
 const sessions: Array<WorldState> = [];
@@ -197,33 +237,8 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
    for (let tick = 0; tick < tickAmount; tick++) {
       worldState.entities.forEach((entity) => {
          if (isBoat(entity)) {
-            function mulVector(v: Vector2D, l: number) {
-               return {
-                  x: v.x * l,
-                  y: v.y * l,
-               };
-            }
-
-            function addVector(v0: Vector2D, v1: Vector2D) {
-               return {
-                  x: v0.x + v1.x,
-                  y: v0.y + v1.y,
-               };
-            }
-
-            function applyVector(v: Vector2D, fn: (n: number) => number) {
-               return {
-                  x: fn(v.x),
-                  y: fn(v.y),
-               };
-            }
             const degreeFromXAxis = 90 - entity.degree;
             const radian = (degreeFromXAxis * Math.PI) / 180;
-
-            const roundTo = (n: number, digit: number) => {
-               const mult = 1 / digit;
-               return Math.round(n * mult) / mult;
-            };
 
             const normalizedVector = {
                x: Math.sin(radian),
@@ -329,8 +344,12 @@ playerRouter.post("/boat/set", (req: BoatChangeRequest, res) => {
 });
 
 playerRouter.get("/boat/scan", (req, res) => {
+   const world: WorldState = res.locals.world;
+   const boat: Boat = res.locals.boat;
+
+   const entityWithinRange = worldState_findEntityWithinRange(world, boat.position, boat.scanRange);
    res.json({
-      data: [],
+      data: entityWithinRange.filter(entity => entity.id !== boat.id),
    });
 });
 
