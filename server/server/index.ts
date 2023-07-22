@@ -219,20 +219,13 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
 
             entity.degree = roundTo(
                entity.degree +
-                  entity.velocity.angular / worldState.tick.tickrate,
+               entity.velocity.angular / worldState.tick.tickrate,
                0.001
             );
          }
       });
    }
    worldState.tick.currentTick += tickAmount;
-   console.log(
-      util.inspect(worldState, {
-         showHidden: false,
-         depth: null,
-         colors: true,
-      })
-   );
 }
 
 function worldState_startTickLoop(world: WorldState) {
@@ -300,7 +293,7 @@ playerRouter.post("/boat/set", (req: BoatChangeRequest, res) => {
    const boat = res.locals.boat;
 
    const velocityChange = filterUndefined(
-      req.body.data.velocity as Partial<Velocity>
+      req.body.data.velocity as Partial<Velocity> || {}
    );
    const position = req.body.data.position || boat.position;
    const scanRange = req.body.data.scanRange || boat.scanRange;
