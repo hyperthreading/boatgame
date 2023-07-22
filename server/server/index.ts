@@ -24,12 +24,16 @@ interface Vector2D {
 type EntityId = string;
 type PlayerId = string;
 
-interface Boat {
-   type: string;
-   id: EntityId;
+interface BoatProperty {
    velocity: Velocity;
    position: Vector2D;
    degree: number;
+   scanRange: number;
+}
+
+interface Boat extends BoatProperty {
+   type: string;
+   id: EntityId;
 }
 
 interface PlayerOwnedEntity {
@@ -68,11 +72,20 @@ type PlayerRequest = express.Request<
    { world: WorldState; boat: Boat }
 >;
 
+type BoatChangeRequest = express.Request<{
+   velocity: Partial<Velocity>;
+   position: Vector2D;
+   scanRange: number;
+}>;
+
 let idCounter = 0;
 function get_unique_id() {
    // 내맴 ㅋㅋ
    return String(idCounter++);
 }
+
+const WORLD_LENGTH = 10;
+const BOAT_SCAN_RANGE = 5;
 
 function boat_new(): Boat {
    return {
@@ -87,6 +100,7 @@ function boat_new(): Boat {
          y: 0,
       },
       degree: 0,
+      scanRange: BOAT_SCAN_RANGE,
    };
 }
 
@@ -94,7 +108,7 @@ function tickState_new(): TickState {
    return {
       tickrate: 10,
       currentTick: 0,
-      tickLoopId: null
+      tickLoopId: null,
    };
 }
 
@@ -102,7 +116,7 @@ function worldState_new(): WorldState {
    return {
       id: get_unique_id(),
       tick: tickState_new(),
-      length: 10,
+      length: WORLD_LENGTH,
       entities: [],
       playerOwnEntityRefList: [],
    };
@@ -205,7 +219,7 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
 
             entity.degree = roundTo(
                entity.degree +
-               entity.velocity.angular / worldState.tick.tickrate,
+                  entity.velocity.angular / worldState.tick.tickrate,
                0.001
             );
          }
@@ -222,11 +236,9 @@ function engine_tick_continue(worldState: WorldState, tickAmount: number) {
 }
 
 function worldState_startTickLoop(world: WorldState) {
-   world.tick.tickLoopId = setInterval(
-      () => {
-         engine_tick_continue(world, 1);
-      }, 1000 / world.tick.tickrate
-   )
+   world.tick.tickLoopId = setInterval(() => {
+      engine_tick_continue(world, 1);
+   }, 1000 / world.tick.tickrate);
 }
 
 function worldState_stopTickLoop(world: WorldState) {
@@ -278,16 +290,30 @@ playerRouter.get("/boat", (req: PlayerRequest, res) => {
    });
 });
 
-playerRouter.post("/boat/set", (req: PlayerRequest, res) => {
+function filterUndefined<T extends {}>(obj: T): any {
+   return Object.fromEntries(
+      Object.entries(obj).filter(([k, v]) => v !== undefined)
+   );
+}
+
+playerRouter.post("/boat/set", (req: BoatChangeRequest, res) => {
    const boat = res.locals.boat;
 
-   let { length, angular } = req.body.data.velocity as Partial<Velocity>;
-   length = length != undefined ? length : boat.velocity.length;
-   angular = angular != undefined ? angular : boat.velocity.angular;
-   boat.velocity = { ...boat.velocity, length, angular };
+   const velocityChange = filterUndefined(
+      req.body.data.velocity as Partial<Velocity>
+   );
+   const position = req.body.data.position || boat.position;
+   const scanRange = req.body.data.scanRange || boat.scanRange;
+   boat.velocity = { ...boat.velocity, ...velocityChange, position, scanRange };
 
    res.json({
       data: boat,
+   });
+});
+
+playerRouter.get("/boat/scan", (req, res) => {
+   res.json({
+      data: [],
    });
 });
 
