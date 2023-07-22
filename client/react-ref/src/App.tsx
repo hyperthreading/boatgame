@@ -7,9 +7,24 @@ interface Velocity {
   angular: number;
 }
 type VelocityChange = Partial<Velocity>;
+interface Vector2D { x: number; y: number };
+
+interface Entity {
+  id: string;
+  type: string;
+  position: Vector2D
+}
+interface Boat {
+  velocity: Velocity;
+  position: Vector2D;
+  degree: number;
+};
 
 const client = axios.create({
-  baseURL: "/api",
+  baseURL: "http://localhost:8080/api",
+  headers: {
+    Authorization: `Bearer ${new Date().getTime()}`
+  }
 });
 
 const createSession = async () => {
@@ -31,7 +46,7 @@ const proceed = async (sessionId: string, amount: number) => {
 };
 
 const getBoatState = async (sessionId: string) => {
-  return (await client.get(`/sessions/${sessionId}/player/boat`)).data.data;
+  return (await client.get(`/sessions/${sessionId}/player/boat`)).data.data as Boat;
 };
 
 const setBoatState = async (sessionId: string, velocity: VelocityChange) => {
@@ -41,8 +56,12 @@ const setBoatState = async (sessionId: string, velocity: VelocityChange) => {
         velocity,
       },
     })
-  ).data.data;
+  ).data.data as Boat;
 };
+
+const scanFromBoat = async (sessionId: string) => {
+  return (await client.get(`/sessions/${sessionId}/player/boat/scan`)).data.data as Entity[];
+}
 
 function App() {
   const worldLength = 10;
@@ -62,21 +81,19 @@ function App() {
 
   const [tickAmountInputText, setTickAmountInputText] = useState<string>("");
 
-  const [boat, setBoat] = useState<{
-    velocity: Velocity;
-    position: { x: number; y: number };
-    degree: number;
-  }>({
+  const [boat, setBoat] = useState<Boat>({
     velocity: { length: 0, angular: 0 },
     position: { x: worldLength / 2, y: worldLength / 2 },
     degree: 0,
   });
 
+  const [nearbyEntityList, setNearbyEntityList] = useState<Entity[]>([]);
+
   useEffect(() => {
     if (sessionId === null) return;
-    const timerId = setInterval(async () => {
-      const boat = await getBoatState(sessionId);
-      setBoat(boat);
+    const timerId = setInterval(() => {
+      getBoatState(sessionId).then(setBoat);
+      scanFromBoat(sessionId).then(setNearbyEntityList);
     }, 100);
 
     return () => {
@@ -116,6 +133,7 @@ function App() {
               position: "relative",
             }}
           >
+            {/* Player Boat */}
             <div
               style={{
                 position: "absolute",
@@ -140,6 +158,22 @@ function App() {
                 }}
               ></div>
             </div>
+            {/* Nearby Entities */}
+            {nearbyEntityList.map(entity => {
+              return (
+                <div style={{
+                  position: "absolute",
+                  top: entity.position.x * 50 - 25,
+                  left: entity.position.y * 50 - 25,
+                  background: "red",
+                  border: "1px solid black",
+                  borderRadius: 50,
+                  width: 50,
+                  height: 50,
+                }}>
+                </div>
+              );
+            })}
           </div>
         </section>
         <div style={{ width: 100 }}></div>

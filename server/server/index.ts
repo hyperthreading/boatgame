@@ -1,11 +1,13 @@
 import util from "util";
 import express, { Locals } from "express";
 import morgan from "morgan";
+import cors from "cors";
 
 const app = express();
 
 app.use(morgan("dev"));
 app.use(express.json());
+app.use(cors())
 
 app.get("/health", (req, res) => {
    res.send("OK");
@@ -377,7 +379,7 @@ sessionRouter.use(
 sessionRouter.post("/join", (req, res) => {
    const world = res.locals.world;
    const playerId = res.locals.playerId;
-   if (worldState_checkPlayerExist(world, playerId)) {
+   if (!worldState_checkPlayerExist(world, playerId)) {
       worldState_addPlayer(world, playerId);
       res.json({ message: "ok" });
    } else {
