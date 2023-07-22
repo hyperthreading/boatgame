@@ -121,7 +121,7 @@ function App() {
                 position: "absolute",
                 top: boat.position.x * 50 - 25,
                 left: boat.position.y * 50 - 25,
-                rotate: `${boat.degree}deg`,
+                rotate: `-${boat.degree}deg`,
                 background: "black",
                 border: "1px solid black",
                 borderRadius: 50,
@@ -131,14 +131,14 @@ function App() {
             >
               <div
                 style={{
-                  position:"absolute",
-                  top: 0,
+                  position: "absolute",
+                  top: 50 - 50 / 2,
                   left: 50 / 2,
                   width: 0,
                   height: 50 / 2,
                   border: "1px solid red",
-                }}>
-              </div>
+                }}
+              ></div>
             </div>
           </div>
         </section>
