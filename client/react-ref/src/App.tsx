@@ -65,9 +65,11 @@ function App() {
   const [boat, setBoat] = useState<{
     velocity: Velocity;
     position: { x: number; y: number };
+    degree: number;
   }>({
     velocity: { length: 0, angular: 0 },
     position: { x: worldLength / 2, y: worldLength / 2 },
+    degree: 0,
   });
 
   useEffect(() => {
@@ -119,13 +121,25 @@ function App() {
                 position: "absolute",
                 top: boat.position.x * 50 - 25,
                 left: boat.position.y * 50 - 25,
+                rotate: `${boat.degree}deg`,
                 background: "black",
                 border: "1px solid black",
                 borderRadius: 50,
                 width: 50,
                 height: 50,
               }}
-            ></div>
+            >
+              <div
+                style={{
+                  position:"absolute",
+                  top: 0,
+                  left: 50 / 2,
+                  width: 0,
+                  height: 50 / 2,
+                  border: "1px solid red",
+                }}>
+              </div>
+            </div>
           </div>
         </section>
         <div style={{ width: 100 }}></div>
@@ -183,14 +197,14 @@ function App() {
                 {boat.velocity.angular} deg/s
                 <button
                   onClick={() => {
-                    changeBoatVelocity({ angular: 5 });
+                    changeBoatVelocity({ angular: 15 });
                   }}
                 >
                   +
                 </button>
                 <button
                   onClick={() => {
-                    changeBoatVelocity({ angular: -5 });
+                    changeBoatVelocity({ angular: -15 });
                   }}
                 >
                   -
