@@ -44,15 +44,30 @@ interface BoatVelocity {
 interface BoatState {
    velocity: BoatVelocity;
    position: Vector2D;
+   degree: number;
 }
 
 interface BoatStateChange {
    velocity?: Partial<BoatVelocity>;
    position?: Partial<Vector2D>;
+   scanRange?: number;
+}
+
+interface Entity {
+   type: string;
+   id: string;
+   position: Vector2D;
 }
 
 function getDistance(pos1: Vector2D, pos2: Vector2D): number {
    return ((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2) ** 0.5;
+}
+
+function addVector(v0: Vector2D, v1: Vector2D) {
+   return {
+      x: v0.x + v1.x,
+      y: v0.y + v1.y,
+   };
 }
 
 const client = axios.create({
@@ -69,15 +84,22 @@ const createSession = async () => {
 
 const joinSession = async (sessionId: string) => {
    return client.post(`/sessions/${sessionId}/join`);
-}
+};
 
 const startTick = async (sessionId: string) => {
    return await client.post(`/sessions/${sessionId}/engine/tick/start`);
-}
+};
 
 const stopTick = async (sessionId: string) => {
    return await client.post(`/sessions/${sessionId}/engine/tick/stop`);
-}
+};
+
+const proceedTick = async (sessionId: string, tickAmount: number) =>
+   client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
+      data: {
+         amount: tickAmount,
+      },
+   });
 
 const setupEngineForTesting = async (sessionId: string) => {
    await stopTick(sessionId);
@@ -94,14 +116,20 @@ const controlBoat = async (sessionId: string, data: BoatStateChange) =>
    });
 
 const getBoat = async (sessionId: string) =>
-   client.get(`/sessions/${sessionId}/player/boat`);
+   (await client.get(`/sessions/${sessionId}/player/boat`)).data
+      .data as BoatState;
 
-const proceedTick = async (sessionId: string, tickAmount: number) =>
-   client.post(`/sessions/${sessionId}/engine/tick/proceed`, {
-      data: {
-         amount: tickAmount,
-      },
-   });
+const scanFromBoat = async (sessionId: string) =>
+   (await client.get(`/sessions/${sessionId}/player/boat/scan`)).data
+      .data as Array<Entity>;
+
+async function upsertMultipleEntity(sessionId: string, data: any) {
+   return (
+      await client.post(`/sessions/${sessionId}/upsert_multiple_entity`, {
+         data: data,
+      })
+   ).data.data as Array<Entity>;
+}
 
 (async () => {
    await test("배가 앞으로 움직인다.", async () => {
@@ -114,10 +142,10 @@ const proceedTick = async (sessionId: string, tickAmount: number) =>
          },
       });
       const oldResponse = await getBoat(sessionId);
-      const oldPosition = oldResponse.data.data.position;
+      const oldPosition = oldResponse.position;
       await proceedTick(sessionId, 100);
       const response = await getBoat(sessionId);
-      const newPosition = response.data.data.position;
+      const newPosition = response.position;
       assert(
          getDistance(oldPosition, newPosition) === 10,
          `10만큼 이동해야 함 ${inspect(oldPosition)} -> ${inspect(newPosition)}`
@@ -133,18 +161,35 @@ const proceedTick = async (sessionId: string, tickAmount: number) =>
             angular: 1,
          },
       });
-      const oldResponse = await client.get(
-         `/sessions/${sessionId}/player/boat`
-      );
-      const oldDegree = oldResponse.data.data;
+      const oldResponse = await getBoat(sessionId);
+      const oldDegree = oldResponse.degree;
       await proceedTick(sessionId, 100);
       const response = await getBoat(sessionId);
-      const newDegree = response.data.data;
+      const newDegree = response.degree;
       assert(
-         Math.abs(oldDegree.degree - newDegree.degree) === 10,
+         Math.abs(oldDegree - newDegree) === 10,
          `10만큼 회전해야 함 ${inspect(oldDegree)} -> ${inspect(newDegree)}`
       );
    });
+
+   // await test("주변 사물을 스캔할 수 있음", async () => {
+   //    const sessionId = await createSession();
+   //    await setupEngineForTesting(sessionId);
+   //    const boat = await getBoat(sessionId);
+   //    await controlBoat(sessionId, { scanRange: 1 });
+   //    const newEntity = {
+   //       type: "blob",
+   //       position: addVector(boat.position, { x: 0, y: 1 }),
+   //    };
+   //    const entityList = await upsertMultipleEntity(sessionId, [newEntity]);
+   //    const scannedEntityList = await scanFromBoat(sessionId);
+   //    assert(
+   //       Boolean(
+   //          scannedEntityList.find((entity) => entity.id === entityList[0].id)
+   //       ),
+   //       "추가한 엔티티를 스캔 범위에서 찾을 수 있음."
+   //    );
+   // });
 
    await test("같은 토큰을 써도 세션마다 다른 상태를 갖는다.", async () => {
       async function getBoatFromNewSession(velocity: Partial<BoatVelocity>) {
@@ -153,7 +198,7 @@ const proceedTick = async (sessionId: string, tickAmount: number) =>
          await controlBoat(sessionId, {
             velocity,
          });
-         return (await getBoat(sessionId)).data.data as BoatState;
+         return getBoat(sessionId);
       }
 
       const boat1 = await getBoatFromNewSession({ length: 1 });
@@ -186,11 +231,11 @@ const proceedTick = async (sessionId: string, tickAmount: number) =>
          },
       });
       const oldResponse = await getBoat(sessionId);
-      const oldPosition = oldResponse.data.data.position;
+      const oldPosition = oldResponse.position;
       await startTick(sessionId);
       await sleep(1100);
       const response = await getBoat(sessionId);
-      const newPosition = response.data.data.position;
+      const newPosition = response.position;
       assert(
          getDistance(oldPosition, newPosition) >= 1,
          `1 이상 이동해야 함 ${inspect(oldPosition)} -> ${inspect(newPosition)}`
